@@ -1,0 +1,64 @@
+version: "3.8"
+services:
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: gluetun
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - TZ=<YOUR_TIMEZONE>
+      - PUID=<PUID>
+      - PGID=<PGID>
+      - VPN_SERVICE_PROVIDER=surfshark
+      - VPN_TYPE=wireguard
+      - WIREGUARD_PRIVATE_KEY=<YOUR_WIREGUARD_PRIVATE_KEY>
+      - WIREGUARD_ADDRESS=<YOUR_WG_IP/32>
+      - WIREGUARD_PRESHARED_KEY=<OPTIONAL_PRESHARED_KEY>
+      - SERVER_COUNTRY=<SURFSHARK_COUNTRY_OR_CODE>
+      - LOCAL_NETWORK=<YOUR_LAN_CIDR>    # e.g. 192.168.1.0/24
+    ports:
+      - "32400:32400/tcp"   # Plex
+      - "32469:32469/tcp"   # Plex DLNA helper
+      - "1900:1900/udp"     # SSDP (DLNA/Discovery)
+      - "32410-32414:32410-32414/udp"   # Plex discovery UDP range
+      - "34400:34400/tcp"   # xTeVe web UI (adjust if needed)
+    volumes:
+      - ./gluetun:/gluetun
+      - /etc/localtime:/etc/localtime:ro
+    restart: unless-stopped
+
+  xteve:
+    image: xteve/xteve:latest
+    container_name: xteve
+    network_mode: "service:gluetun"
+    depends_on:
+      - gluetun
+    environment:
+      - TZ=<YOUR_TIMEZONE>
+    volumes:
+      - ./xteve:/root/.xteve
+      - ./media:/media
+    restart: unless-stopped
+
+  plex:
+    image: linuxserver/plex:latest
+    container_name: plex
+    network_mode: "service:gluetun"
+    depends_on:
+      - gluetun
+    environment:
+      - PUID=<PUID>
+      - PGID=<PGID>
+      - TZ=<YOUR_TIMEZONE>
+      - PLEX_CLAIM=<PLEX_CLAIM_TOKEN>   # optional, for initial claim
+    volumes:
+      - ./plex/config:/config
+      - ./media:/media
+    restart: unless-stopped
+
+# Notes:
+# - Replace all <> placeholders (PUID/PGID, TZ, WG keys, LOCAL_NETWORK, paths).
+# - Plex and xTeVe are run with network_mode: "service:gluetun" so their traffic is routed through gluetun.
+#   gluetun publishes the Plex ports on the host so Plex should be reachable on your LAN when LOCAL_NETWORK is set correctly.
+# - Remote (internet) access to Plex may not work unless your VPN provider supports port forwarding or you run Plex outside the VPN.
+# - If you prefer Plex outside the VPN, remove network_mode from the plex service and map ports directly on the plex service instead.
